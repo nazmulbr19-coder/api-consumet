@@ -27,10 +27,11 @@ const fastify = Fastify({
   maxParamLength: 1000,
   logger: true,
 });
-export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
-(async () => {
-  const PORT = Number(process.env.PORT) || 3000;
 
+export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
+
+// Register plugins and routes
+async function init() {
   await fastify.register(FastifyCors, {
     origin: '*',
     methods: 'GET',
@@ -40,27 +41,20 @@ export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
     console.log(chalk.yellowBright('DEMO MODE ENABLED'));
 
     const map = new Map<string, { expiresIn: Date }>();
-    // session duration in milliseconds (5 hours)
     const sessionDuration = 1000 * 60 * 60 * 5;
 
     fastify.addHook('onRequest', async (request, reply) => {
       const ip = request.ip;
       const session = map.get(ip);
 
-      // check if the requester ip has a session (temporary access)
       if (session) {
-        // if session is found, check if the session is expired
         const { expiresIn } = session;
         const currentTime = new Date();
         const sessionTime = new Date(expiresIn);
 
-        // check if the session has been expired
         if (currentTime.getTime() > sessionTime.getTime()) {
           console.log('session expired');
-          // if expired, delete the session and continue
           map.delete(ip);
-
-          // redirect to the demo request page
           return reply.redirect('/apidemo');
         }
         console.log('session found. expires in', expiresIn);
@@ -68,7 +62,6 @@ export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
         return;
       }
 
-      // if route is not /apidemo, redirect to the demo request page
       if (request.url === '/apidemo') return;
 
       console.log('session not found');
@@ -77,17 +70,13 @@ export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
 
     fastify.post('/apidemo', async (request, reply) => {
       const { ip } = request;
-
-      // check if the requester ip has a session (temporary access)
       const session = map.get(ip);
 
       if (session) return reply.redirect('/');
 
-      // if no session, create a new session
       const expiresIn = new Date(Date.now() + sessionDuration);
       map.set(ip, { expiresIn });
 
-      // redirect to the demo request page
       reply.redirect('/');
     });
 
@@ -103,7 +92,6 @@ export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
       }
     });
 
-    // set interval to delete expired sessions every 1 hour
     setInterval(
       () => {
         const currentTime = new Date();
@@ -111,10 +99,8 @@ export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
           const { expiresIn } = session;
           const sessionTime = new Date(expiresIn);
 
-          // check if the session is expired
           if (currentTime.getTime() > sessionTime.getTime()) {
             console.log('session expired for', ip);
-            // if expired, delete the session and continue
             map.delete(ip);
           }
         }
@@ -123,7 +109,6 @@ export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
     );
   }
 
-  console.log(chalk.green(`Starting server on port ${PORT}... 🚀`));
   if (!process.env.REDIS_HOST)
     console.warn(chalk.yellowBright('Redis not found. Cache disabled.'));
   if (!process.env.TMDB_KEY)
@@ -134,40 +119,49 @@ export const tmdbApi = process.env.TMDB_KEY && process.env.TMDB_KEY;
   await fastify.register(books, { prefix: '/books' });
   await fastify.register(anime, { prefix: '/anime' });
   await fastify.register(manga, { prefix: '/manga' });
-  //await fastify.register(comics, { prefix: '/comics' });
   await fastify.register(lightnovels, { prefix: '/light-novels' });
   await fastify.register(movies, { prefix: '/movies' });
   await fastify.register(meta, { prefix: '/meta' });
   await fastify.register(news, { prefix: '/news' });
-
   await fastify.register(Utils, { prefix: '/utils' });
 
-  try {
-    fastify.get('/', (_, rp) => {
-      rp.status(200).send(
-        `Welcome to consumet api! 🎉 \n${process.env.NODE_ENV === 'DEMO'
+  fastify.get('/', (_, rp) => {
+    rp.status(200).send(
+      `Welcome to consumet api! 🎉 \n${
+        process.env.NODE_ENV === 'DEMO'
           ? 'This is a demo of the api. You should only use this for testing purposes.'
           : ''
-        }`,
-      );
-    });
-    fastify.get('*', (request, reply) => {
-      reply.status(404).send({
-        message: '',
-        error: 'page not found',
-      });
-    });
+      }`,
+    );
+  });
 
-    fastify.listen({ port: PORT, host: '0.0.0.0' }, (e, address) => {
-      if (e) throw e;
-      console.log(`server listening on ${address}`);
+  fastify.get('*', (request, reply) => {
+    reply.status(404).send({
+      message: '',
+      error: 'page not found',
     });
-  } catch (err: any) {
-    fastify.log.error(err);
-    process.exit(1);
-  }
-})();
+  });
+}
+
+const appPromise = init();
+
+// Vercel Serverless Function Handler
 export default async function handler(req: any, res: any) {
-  await fastify.ready()
-  fastify.server.emit('request', req, res)
+  await appPromise;
+  await fastify.ready();
+  fastify.server.emit('request', req, res);
+}
+
+// Local Development Server (only runs outside Vercel)
+if (!process.env.VERCEL) {
+  appPromise.then(() => {
+    const PORT = Number(process.env.PORT) || 3000;
+    fastify.listen({ port: PORT, host: '0.0.0.0' }, (err, address) => {
+      if (err) {
+        fastify.log.error(err);
+        process.exit(1);
+      }
+      console.log(`Server listening on ${address}`);
+    });
+  });
 }
