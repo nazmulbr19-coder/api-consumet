@@ -7,8 +7,6 @@ import { StreamingServers } from '@consumet/extensions/dist/models';
 
 import cache from '../../utils/cache';
 import { redis } from '../../main';
-import NineAnime from '@consumet/extensions/dist/providers/anime/9anime';
-import Zoro from '@consumet/extensions/dist/providers/anime/zoro';
 
 const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
   fastify.get('/', (_, rp) => {
@@ -365,8 +363,6 @@ const routes = async (fastify: FastifyInstance, options: RegisterOptions) => {
     },
   );
 
-  //anilist staff info from character id (for example: voice actors)
-  //http://127.0.0.1:3000/meta/anilist/staff/95095  (gives info of sukuna's voice actor (Junichi Suwabe) )
   fastify.get('/staff/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     const id = (request.params as { id: string }).id;
 
@@ -396,22 +392,11 @@ const generateAnilistMeta = (provider: string | undefined = undefined): Anilist 
       (p) => p.name.toLowerCase() === provider.toLocaleLowerCase(),
     );
 
-    if (possibleProvider instanceof NineAnime) {
-      possibleProvider = new ANIME.NineAnime(
-        process.env?.NINE_ANIME_HELPER_URL,
-        {
-          url: process.env?.NINE_ANIME_PROXY as string,
-        },
-        process.env?.NINE_ANIME_HELPER_KEY as string,
-      );
-    }
-
     return new META.Anilist(possibleProvider, {
       url: process.env.PROXY as string | string[],
     });
   } else {
-    // default provider is Zoro
-    return new Anilist(new Zoro(), {
+    return new META.Anilist(undefined, {
       url: process.env.PROXY as string | string[],
     });
   }
